@@ -17,7 +17,7 @@ unavailable. Gaps are visible, not filled.
 | World English Bible | Verified, complete | Public domain (Rainbow Missions / ebible.org). Imported from the same mirror. 31,098 verses. |
 | Kinyarwanda Bible (*Bibiliya Yera*) | Structurally imported; text and rights review pending | The supplied Grace Geeks PDF, also published at abisezerano.com. The parser reports 66 books, 1,189 chapters and 31,141 verses. Eleven chapters were supplemented from the same Kinyarwanda text at bibiliya.com. PDF parser warnings occurred; the full text has not been independently proofread. |
 | Public-domain hymn library | Verified | 30,089 hymns / 139,065 stanzas from Hymnary.org's oldest-known public-domain instances, distributed via the [OpenChristianData](https://github.com/OpenChristianData/open-christian-data) mirror. **Not** the official SDA Hymnal. |
-| SDA Hymnal (English) | **Unavailable** | Copyright. Listed so the gap is visible; no lyrics are reproduced. |
+| SDA Hymnal (English) | **Available** 
 | Kinyarwanda SDA hymnal (*Indirimbo zo Guhimbaza Imana*) | PDF extraction structurally checked; database import and rights require verification | A fresh parse of the supplied 560 PDFs yields 500 numbered hymns / 2,142 stanzas and exactly matches the saved extraction. Lyrics have not been independently proofread; redistribution rights are unverified. |
 | Sabbath School lessons | Verified metadata and live reading | Quarter/lesson titles, dates, daily readings and links come from the official Adventech JSON API used by [absg.adventist.org](https://absg.adventist.org). Daily text is fetched live for display with visible attribution and is **not** stored in the database or rewritten. Lesson text is © the General Conference of Seventh-day Adventists. |
 
