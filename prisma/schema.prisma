@@ -1,0 +1,342 @@
+// RCA SDA — data model
+//
+// Content is stored separately from the interface. Every imported record keeps a
+// link to the Source row that records who published it, under what licence, and
+// whether it has been verified. Nothing is served as "official" unless its
+// verification status says so.
+//
+// Supabase PostgreSQL is used for development and production. Use the pooled
+// connection string at runtime and the direct/session connection for Prisma
+// migrations. Models stay portable: enums are strings, arrays are JSON text.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+/// Who published a content set, under what terms, and when it was last checked.
+model Source {
+  id                 String    @id // e.g. "midvash-bible-data", "hymnary-pd"
+  organization       String
+  title              String
+  sourceUrl          String?
+  license            String
+  licenseUrl         String?
+  permissionNotes    String?
+  verificationStatus String // VERIFIED | PENDING | UNAVAILABLE
+  lastVerifiedAt     DateTime?
+  createdAt          DateTime  @default(now())
+
+  translations    Translation[]
+  hymnCollections HymnCollection[]
+  quarters        Quarter[]
+}
+
+/// A Bible edition: name, language, rights holder, completeness, verification.
+model Translation {
+  id                 String    @id
+  name               String
+  abbreviation       String
+  language           String // English | Ikinyarwanda
+  languageCode       String // en | rw
+  year               String?
+  copyright          String
+  license            String
+  sourceId           String?
+  source             Source?   @relation(fields: [sourceId], references: [id])
+  verificationStatus String // VERIFIED | PENDING | UNAVAILABLE
+  isComplete         Boolean   @default(false)
+  verseCount         Int       @default(0)
+  chapterCount       Int       @default(0)
+  bookCount          Int       @default(0)
+  /// Honest description of what is and is not available for this edition.
+  availabilityNote   String?
+  lastVerifiedAt     DateTime?
+  sortOrder          Int       @default(0)
+
+  verses Verse[]
+}
+
+/// Canonical book metadata, shared by every translation.
+model Book {
+  id               String     @id // OSIS id, e.g. "Gen"
+  order            Int        @unique
+  testament        String // OT | NT
+  chapterCount     Int
+  /// JSON array of verse counts per chapter, derived from the verified source.
+  versesPerChapter String
+  names            BookName[]
+  verses           Verse[]
+}
+
+/// Localised book name (English / Kinyarwanda). Names are traditional and factual.
+model BookName {
+  id           Int    @id @default(autoincrement())
+  bookId       String
+  book         Book   @relation(fields: [bookId], references: [id])
+  languageCode String
+  name         String
+  abbreviation String
+
+  @@unique([bookId, languageCode])
+}
+
+model Verse {
+  id            Int         @id @default(autoincrement())
+  translationId String
+  translation   Translation @relation(fields: [translationId], references: [id])
+  bookId        String
+  book          Book        @relation(fields: [bookId], references: [id])
+  chapter       Int
+  number        Int
+  text          String
+
+  @@unique([translationId, bookId, chapter, number])
+  @@index([translationId, bookId, chapter])
+  @@index([text])
+  @@index([text(ops: raw("gin_trgm_ops"))], type: Gin, map: "Verse_text_trgm_idx")
+}
+
+model HymnCollection {
+  id                 String  @id
+  name               String
+  languageCode       String
+  publisher          String
+  copyright          String
+  license            String
+  sourceUrl          String?
+  sourceId           String?
+  source             Source? @relation(fields: [sourceId], references: [id])
+  verificationStatus String // VERIFIED | PENDING | UNAVAILABLE
+  /// Explanation shown in the UI when a collection is not available.
+  availabilityNote   String?
+  numberingNote      String?
+  isOfficialSda      Boolean @default(false)
+  hymnCount          Int     @default(0)
+  sortOrder          Int     @default(0)
+
+  hymns Hymn[]
+}
+
+model Hymn {
+  id                 Int            @id @default(autoincrement())
+  collectionId       String
+  collection         HymnCollection @relation(fields: [collectionId], references: [id])
+  number             Int
+  title              String
+  languageCode       String
+  firstLine          String
+  author             String?
+  translator         String?
+  composer           String?
+  meter              String?
+  category           String?
+  verificationStatus String         @default("VERIFIED")
+  sourceUrl          String?
+  stanzas            HymnStanza[]
+
+  @@unique([collectionId, number])
+  @@index([title])
+  @@index([firstLine])
+  @@index([title(ops: raw("gin_trgm_ops"))], type: Gin, map: "Hymn_title_trgm_idx")
+  @@index([firstLine(ops: raw("gin_trgm_ops"))], type: Gin, map: "Hymn_firstLine_trgm_idx")
+}
+
+model HymnStanza {
+  id     Int    @id @default(autoincrement())
+  hymnId Int
+  hymn   Hymn   @relation(fields: [hymnId], references: [id], onDelete: Cascade)
+  order  Int
+  /// verse | chorus | refrain | bridge
+  kind   String @default("verse")
+  text   String
+
+  @@index([hymnId])
+  @@index([text(ops: raw("gin_trgm_ops"))], type: Gin, map: "HymnStanza_text_trgm_idx")
+}
+
+model Quarter {
+  id                 String    @id
+  year               Int
+  quarter            Int
+  title              String
+  description        String?
+  humanDate          String?
+  startDate          DateTime
+  endDate            DateTime
+  /// Official introduction is only stored when its reproduction is authorised.
+  introduction       String?
+  sourceId           String?
+  source             Source?   @relation(fields: [sourceId], references: [id])
+  officialUrl        String
+  verificationStatus String // VERIFIED | PENDING | UNAVAILABLE
+  contentPermission  String // LINK_ONLY | AUTHORIZED
+  lastSyncedAt       DateTime?
+  lessons            Lesson[]
+
+  @@unique([year, quarter])
+}
+
+model Lesson {
+  id                 String      @id
+  quarterId          String
+  quarter            Quarter     @relation(fields: [quarterId], references: [id])
+  number             Int
+  title              String
+  startDate          DateTime
+  endDate            DateTime
+  memoryVerseRef     String?
+  /// Official lesson page. Full text is never mirrored unless permission exists.
+  officialUrl        String
+  contentPermission  String      @default("LINK_ONLY")
+  verificationStatus String      @default("VERIFIED")
+  days               LessonDay[]
+
+  @@unique([quarterId, number])
+  @@index([title(ops: raw("gin_trgm_ops"))], type: Gin, map: "Lesson_title_trgm_idx")
+}
+
+model LessonDay {
+  id            Int     @id @default(autoincrement())
+  lessonId      String
+  lesson        Lesson  @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  index         Int
+  /// sabbath | sunday | monday | tuesday | wednesday | thursday | friday
+  day           String
+  title         String?
+  /// Only populated for sources whose reproduction is authorised.
+  body          String?
+  referenceRefs String? // JSON array of scripture references mentioned officially
+  officialUrl   String
+
+  @@unique([lessonId, index])
+}
+
+model ReadingPlan {
+  id           String           @id
+  slug         String           @unique
+  title        String
+  description  String
+  days         Int
+  languageCode String           @default("en")
+  items        ReadingPlanDay[]
+}
+
+model ReadingPlanDay {
+  id       Int         @id @default(autoincrement())
+  planId   String
+  plan     ReadingPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  day      Int
+  title    String
+  /// JSON array of passage reference strings, e.g. ["John 1", "John 2"]
+  passages String
+
+  @@unique([planId, day])
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  role         String   @default("MEMBER") // MEMBER | ADMIN
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sessions       Session[]
+  savedItems     SavedItem[]
+  history        ReadingHistory[]
+  lessonProgress LessonProgress[]
+  planProgress   PlanProgress[]
+  preference     Preference?
+}
+
+model Session {
+  id        String   @id
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+/// Bookmarks, favourite verses/hymns, and personal notes. `kind` tells the UI
+/// how to render and where to link. Notes are always user-generated content.
+model SavedItem {
+  id        Int      @id @default(autoincrement())
+  clientId  String
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String // bookmark | favorite | note
+  kind      String // verse | passage | hymn | lesson | day
+  refJson   String
+  title     String
+  subtitle  String?
+  body      String?
+  href      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, clientId])
+  @@index([userId, type])
+}
+
+model ReadingHistory {
+  id        Int      @id @default(autoincrement())
+  clientId  String
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      String
+  title     String
+  subtitle  String?
+  href      String
+  refJson   String?
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, clientId])
+  @@index([userId, updatedAt])
+}
+
+model LessonProgress {
+  id          Int      @id @default(autoincrement())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lessonId    String
+  dayIndex    Int
+  completedAt DateTime @default(now())
+
+  @@unique([userId, lessonId, dayIndex])
+}
+
+model PlanProgress {
+  id          Int      @id @default(autoincrement())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId      String
+  day         Int
+  completedAt DateTime @default(now())
+
+  @@unique([userId, planId, day])
+}
+
+model Preference {
+  userId String @id
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  data   String // JSON: theme, font size, reading font
+}
+
+/// Every content import or synchronisation is logged for administrators.
+model SyncLog {
+  id        Int      @id @default(autoincrement())
+  kind      String // bible | hymn | sabbath-school | admin
+  status    String // SUCCESS | FAILED | SKIPPED
+  message   String
+  detail    String?
+  createdAt DateTime @default(now())
+}
